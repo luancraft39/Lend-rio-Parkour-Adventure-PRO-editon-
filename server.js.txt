@@ -1,0 +1,62 @@
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+
+const app = express();
+app.use(cors()); // Permite conexões do GitHub e de qualquer lugar
+
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: "*", // Qualquer pessoa pode entrar
+        methods: ["GET", "POST"]
+    }
+});
+
+let players = {}; // Guarda quem está jogando
+
+io.on('connection', (socket) => {
+    console.log(`Jogador conectado: ${socket.id}`);
+
+    // Cria o boneco no servidor
+    players[socket.id] = { x: 100, y: 300, type: 'boy', id: socket.id };
+    
+    // Envia a lista de jogadores atuais para quem acabou de entrar
+    socket.emit('currentPlayers', players);
+    
+    // Avisa os outros que você entrou
+    socket.broadcast.emit('newPlayer', players[socket.id]);
+
+    // Quando você anda, avisa os outros
+    socket.on('playerMovement', (movementData) => {
+        if (players[socket.id]) {
+            players[socket.id].x = movementData.x;
+            players[socket.id].y = movementData.y;
+            players[socket.id].type = movementData.type;
+            socket.broadcast.emit('playerMoved', players[socket.id]);
+        }
+    });
+
+    // Quando alguém fala no CHAT
+    socket.on('sendMessage', (messageData) => {
+        io.emit('newMessage', {
+            sender: "Jogador",
+            text: messageData.text,
+            senderId: socket.id
+        });
+    });
+
+    // Quando alguém fecha o jogo
+    socket.on('disconnect', () => {
+        console.log(`Jogador saiu: ${socket.id}`);
+        delete players[socket.id];
+        io.emit('playerDisconnected', socket.id);
+    });
+});
+
+// Porta automática da internet
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Lendário Server rodando na porta ${PORT}`);
+});
